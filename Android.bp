@@ -1,3 +1,23 @@
+package {
+    default_applicable_licenses: ["hardened_malloc_license"],
+}
+
+license {
+    name: "hardened_malloc_license",
+    visibility: ["//visibility:public"],
+    license_kinds: [
+        "SPDX-license-identifier-Apache-2.0",
+        "SPDX-license-identifier-BSL-1.0",
+        "SPDX-license-identifier-ISC",
+        "SPDX-license-identifier-MIT",
+        "legacy_unencumbered",
+    ],
+    license_text: [
+        "LICENSE",
+        "CREDITS",
+    ],
+}
+
 common_cflags = [
     "-pipe",
     "-O3",
@@ -34,7 +54,10 @@ cc_defaults {
     name: "hardened_malloc_defaults",
     defaults: ["linux_bionic_supported"],
     cflags: common_cflags,
-    conlyflags: ["-std=c23", "-Wmissing-prototypes"],
+    conlyflags: [
+        "-std=c23",
+        "-Wmissing-prototypes",
+    ],
     stl: "none",
 }
 
@@ -49,6 +72,7 @@ lib_src_files = [
 
 cc_library {
     name: "libhardened_malloc",
+    compile_multilib: "64",
     ramdisk_available: true,
     vendor_ramdisk_available: true,
     recovery_available: true,
@@ -72,11 +96,37 @@ cc_library {
         debuggable: {
             cflags: ["-DCONFIG_LABEL_MEMORY=true"],
         },
-        device_has_arm_mte: {
-            cflags: ["-DHAS_ARM_MTE", "-march=armv8-a+dotprod+memtag"]
+    },
+    arch: {
+        arm64: {
+            product_variables: {
+                device_has_arm_mte: {
+                    cflags: [
+                        "-DHAS_ARM_MTE",
+                        "-march=armv8-a+dotprod+memtag",
+                    ],
+                },
+            },
         },
     },
     apex_available: [
+        "//apex_available:platform",
+        "com.android.runtime",
+    ],
+}
+
+cc_library_headers {
+    name: "libhardened_malloc_headers",
+    defaults: ["linux_bionic_supported"],
+    ramdisk_available: true,
+    vendor_ramdisk_available: true,
+    recovery_available: true,
+    native_bridge_supported: true,
+    export_include_dirs: ["include"],
+    system_shared_libs: [],
+    stl: "none",
+    apex_available: [
+        "//apex_available:platform",
         "com.android.runtime",
     ],
 }

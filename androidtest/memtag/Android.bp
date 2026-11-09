@@ -1,5 +1,13 @@
 cc_test {
     name: "memtag_test",
+    enabled: select((
+        arch(),
+        product_variable("use_hardened_malloc"),
+        product_variable("device_has_arm_mte"),
+    ), {
+        ("arm64", true, true): true,
+        (default, default, default): false,
+    }),
     srcs: ["memtag_test.cc"],
     cflags: [
         "-Wall",
