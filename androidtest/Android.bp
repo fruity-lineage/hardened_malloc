@@ -8,6 +8,11 @@ java_test_host {
         ("arm64", true, true): true,
         (default, default, default): false,
     }),
+    target: {
+        windows: {
+            enabled: false,
+        },
+    },
     srcs: [
         "src/**/*.java",
     ],
