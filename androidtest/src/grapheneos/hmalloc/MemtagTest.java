@@ -10,10 +10,12 @@ import org.junit.runner.RunWith;
 import java.util.ArrayList;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assume.assumeTrue;
 
 @RunWith(DeviceJUnit4ClassRunner.class)
 public class MemtagTest extends BaseHostJUnit4Test {
     private static final String TEST_BINARY = "/data/local/tmp/memtag_test";
+    private static final int EXIT_UNSUPPORTED = 77;
 
     private void runTest(String name) throws DeviceNotAvailableException {
         var args = new ArrayList<String>();
@@ -23,6 +25,7 @@ public class MemtagTest extends BaseHostJUnit4Test {
 
         var result = getDevice().executeShellV2Command(cmdLine);
 
+        assumeTrue(result.getStdout(), result.getExitCode().intValue() != EXIT_UNSUPPORTED);
         assertEquals("stderr", "", result.getStderr());
         assertEquals("process exit code", 0, result.getExitCode().intValue());
     }

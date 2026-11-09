@@ -9,7 +9,9 @@ cc_test {
         (default, default, default): false,
     }),
     srcs: ["memtag_test.cc"],
+    header_libs: ["bionic_libc_platform_headers"],
     cflags: [
+        "-D_GNU_SOURCE",
         "-Wall",
         "-Werror",
         "-Wextra",

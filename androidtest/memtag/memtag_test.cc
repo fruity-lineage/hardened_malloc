@@ -1,12 +1,18 @@
 // needed to unconditionally enable assertions
 #undef NDEBUG
+#include <asm/hwcap.h>
 #include <assert.h>
+#include <bionic/malloc.h>
 #include <malloc.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/auxv.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
 #include <sys/utsname.h>
 #include <unistd.h>
 
@@ -25,6 +31,59 @@ using u64 = uint64_t;
 
 const size_t DEFAULT_ALLOC_SIZE = 8;
 const size_t CANARY_SIZE = 8;
+const int EXIT_UNSUPPORTED = 77;
+
+int skip_test(const char *reason) {
+    printf("SKIP: %s\n", reason);
+    return EXIT_UNSUPPORTED;
+}
+
+int check_runtime_support() {
+    if (getpagesize() != 4096) {
+        return skip_test("hardened_malloc requires 4 KiB pages");
+    }
+
+    bool iterate_supported;
+    assert(android_mallopt(M_GET_MALLOC_ITERATE_SUPPORTED, &iterate_supported,
+                           sizeof(iterate_supported)));
+    if (iterate_supported) {
+        return skip_test("the native allocator is the fallback allocator");
+    }
+
+    if ((getauxval(AT_HWCAP2) & HWCAP2_MTE) == 0) {
+        return skip_test("the runtime does not support ARM MTE");
+    }
+
+    int tagged_addr_ctrl = prctl(PR_GET_TAGGED_ADDR_CTRL, 0, 0, 0, 0);
+    if (tagged_addr_ctrl < 0 || !(tagged_addr_ctrl & PR_TAGGED_ADDR_ENABLE) ||
+        (tagged_addr_ctrl & PR_MTE_TCF_MASK) == PR_MTE_TCF_NONE) {
+        return skip_test("MTE tag checking is disabled");
+    }
+
+    // Requested thread modes alone do not establish the mode chosen by each CPU.
+    cpu_set_t cpus;
+    if (sched_getaffinity(0, sizeof(cpus), &cpus) != 0) {
+        return skip_test("cannot verify the allowed CPUs' MTE preferences");
+    }
+    for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
+        if (!CPU_ISSET(cpu, &cpus)) {
+            continue;
+        }
+        char path[128];
+        snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/mte_tcf_preferred", cpu);
+        FILE *fp = fopen(path, "r");
+        if (fp == nullptr) {
+            return skip_test("cannot read an allowed CPU's MTE preference");
+        }
+        char mode[16];
+        bool asymmetric = fgets(mode, sizeof(mode), fp) != nullptr && strcmp(mode, "asymm\n") == 0;
+        fclose(fp);
+        if (!asymmetric) {
+            return skip_test("an allowed CPU is not configured for asymmetric MTE");
+        }
+    }
+    return 0;
+}
 
 void do_context_switch() {
     utsname s;
@@ -335,7 +394,17 @@ int main(int argc, char **argv) {
     auto test_fn = tests[test_name];
     assert(test_fn != nullptr);
 
+    int runtime_status = check_runtime_support();
+    if (runtime_status != 0) {
+        return runtime_status;
+    }
+
     assert(mallopt(M_BIONIC_SET_HEAP_TAGGING_LEVEL, M_HEAP_TAGGING_LEVEL_ASYNC) == 1);
+    int tagged_addr_ctrl = prctl(PR_GET_TAGGED_ADDR_CTRL, 0, 0, 0, 0);
+    assert(tagged_addr_ctrl >= 0);
+    if ((tagged_addr_ctrl & PR_MTE_TCF_MASK) != (PR_MTE_TCF_SYNC | PR_MTE_TCF_ASYNC)) {
+        return skip_test("the kernel does not permit asymmetric MTE checking");
+    }
 
     struct sigaction sa = {
         .sa_sigaction = segv_handler,
